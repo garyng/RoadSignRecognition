@@ -1,2 +1,3 @@
 jsonpickle
 pillow
+tabulate
