@@ -14,7 +14,7 @@ from tabulate import tabulate
 class Annotation:
     def __init__(self, obj):
         self.name = obj.find('name').text
-        self.difficult = bool(obj.find('difficult').text)
+        self.difficult = bool(int(obj.find('difficult').text))
         boundingBox = obj.find('bndbox')
         self.xmin = int(round(float(boundingBox.find('xmin').text)))
         self.ymin = int(round(float(boundingBox.find('ymin').text)))
@@ -35,7 +35,7 @@ class Annotations:
         self.filePath = root.find('path').text
         self.objects = [Annotation(obj) for obj in root.findall('object')]
 
-    def crop(self):
+    def crop(self, indexSource):
         # assume annotation file is in the same folder as the images
         imagePath = self.annotationFile.with_name(self.filename)
         if imagePath.is_file():
@@ -44,10 +44,21 @@ class Annotations:
                     for obj in self.objects:
                         region = image.crop(
                             (obj.xmin, obj.ymin, obj.xmax, obj.ymax))
-                        # todo: naming
-                        # use f'{asdas}'
-                        # region.save("{}.jpg".format(obj.name))
-                        print("{}.jpg".format(obj.name))
+
+                        if obj.name not in indexSource:
+                            indexSource[obj.name] = 1
+                        else:
+                            indexSource[obj.name] += 1
+
+                        filename =f'{indexSource[obj.name]:04d}-{obj.name}{"-difficult" if obj.difficult else ""}.jpg'
+                        print(filename)
+                        
+                        directory = path.Path('./cropped') / obj.name
+                        directory.mkdir(parents=True, exist_ok=True)
+                        target = directory / filename
+                        
+                        region.save(target)
+                            
             except IOError:
                 print("error occurred while processing {}".format(imagePath))
 
@@ -56,11 +67,11 @@ class Annotations:
 
 
 def crop(args):
-    annotations = [path for path in path.Path(
-        '.').glob('**/*_timestamped.xml')]
+    counts = {} # to keep track of the indexes for each label
+    annotations = [path for path in path.Path('.').glob('./data/**/*.xml')]
     annotations = [Annotations(annotation) for annotation in annotations]
     for annotation in annotations:
-        annotation.crop()
+        annotation.crop(counts)
 
 def getGroupedImages():
     imagesGlob = ['**/*_timestamped.jpg', '**/*_timestamped.JPG']
@@ -79,7 +90,6 @@ def rename(args):
     for label, images in grouped:
         count = 1
         for image in images:
-            # todo: difficult
             filename = f"{count:04d}-{label}-{image['time']}.jpg"
             directory = path.Path('./data') / label
             directory.mkdir(parents=True, exist_ok=True)
@@ -110,14 +120,13 @@ def count(args):
     headers = ['Morning', 'Noon', 'Night', 'Total']
     transformed = [[stat] + [stats[stat][time] for time in headers] for stat in stats]
     print(tabulate(transformed, headers=headers))
-           
 
 parser = argparse.ArgumentParser(prog="TPR2251 Road Sign Recognition")
 subparsers = parser.add_subparsers()
 
 # crop
 cropParser = subparsers.add_parser(
-    'crop', help="crop raw images under /data according to annotation files")
+    'crop', help="crop raw images under /data according to annotation files and save them to /cropped")
 cropParser.set_defaults(func=crop)
 
 # rename
