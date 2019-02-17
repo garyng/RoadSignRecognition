@@ -15,11 +15,16 @@ from functional import seq
 from random import sample, seed
 import numpy as np
 from loguru import logger
+import pickle
+import Augmentor
+
 
 RAW_DATA_DIRECTORY = "raw" # images directly from the camera
 DATA_DIRECTORY = "data" # renamed images, with annotations
 CROPPED_DIRECTORY = "cropped" # images cropped according to annotations
 PREPROCESSED_DIRECTORY = "preprocessed" # images that are proprocessed (equalize, grayscale, etc)
+AUG_DIRECTORY = "aug" # augmented images
+PICKLE_DIRECTORY = "pkl" # store serialized dataset
 LABELS = ["No entry", "One way", "Speed bump", "Stop"]
 
 
@@ -63,13 +68,13 @@ class Annotations:
 
                         filename =f'{indexSource[obj.name]:04d}-{obj.name}{"-difficult" if obj.difficult else ""}.jpg'
                         print(filename)
-                        
+
                         directory = path.Path(f'./{CROPPED_DIRECTORY}') / obj.name
                         directory.mkdir(parents=True, exist_ok=True)
                         target = directory / filename
-                        
+
                         region.save(target)
-                            
+
             except IOError:
                 print("error occurred while processing {}".format(imagePath))
 
@@ -82,13 +87,13 @@ class Data:
     def __init__(self, imagePath):
         self.path = imagePath
         self.load()
-    
+
     def load(self):
         """Load the image from disk into memory and determines its label from the directory name"""
         logger.debug(f"Reading {self.path.name}")
         self.label = int(Data.fromLabel(self.path.parent.name))
         self.image = skimg.data.imread(self.path)
-    
+
     def preprocess(self, size = (32, 32)):
         self.grayscale()
         self.equalize()
@@ -114,12 +119,11 @@ class Data:
     def fromLabel(name):
         """Convert label name to index"""
         return Data.labels.index(name)
-    
+
     @staticmethod
     def fromIndex(index):
         """Convert index to label name"""
         return Data.labels[index]
-
 
 def crop(args):
     counts = {} # to keep track of the indexes for each label
@@ -178,11 +182,15 @@ def count(args):
     print(tabulate(transformed, headers=headers))
 
 def preprocess(args):
-    size = (args.height, args.width)
-    logger.debug(f'Preprocessing images under /{CROPPED_DIRECTORY}')
+    size = (args.width, args.height)
+    dataset = preprocessDir(CROPPED_DIRECTORY, size)
+    pickleData(dataset, "images", "labels")
+
+def preprocessDir(directory, size):
+    logger.debug(f'Preprocessing images under /{directory}')
     logger.debug(f'Target size: {size}')
 
-    dataset = [Data(path) for path in path.Path('.').glob(f'./{CROPPED_DIRECTORY}/**/*.jpg')]
+    dataset = [Data(path) for path in path.Path('.').glob(f'./{directory}/**/*.jpg')]
 
     groups = seq(dataset).group_by(lambda data: data.label)
     for group in groups:
@@ -194,29 +202,48 @@ def preprocess(args):
         data.save()
     logger.debug("Done preprocessing")
 
+    return dataset
 
-parser = argparse.ArgumentParser(prog="TPR2251 Road Sign Recognition")
-subparsers = parser.add_subparsers()
+def getDataLabelsFromDataset(dataset):
+    data = np.array(seq(dataset).select(lambda data: data.image).to_list()).reshape(len(dataset), -1)
+    labels = np.array(seq(dataset).select(lambda data: data.label).to_list()).reshape(-1)
+    return (data, labels)
 
-# crop
-cropParser = subparsers.add_parser(
-    'crop', help=f"crop images under /{DATA_DIRECTORY} according to annotation files and save them to /{CROPPED_DIRECTORY}")
-cropParser.set_defaults(func=crop)
+def pickleData(dataset, imagesFilename, labelsFilename):
+    logger.debug("Pickling data")
+    images, labels = getDataLabelsFromDataset(dataset)
+    logger.debug(f'images: {images.shape}')
+    logger.debug(f'labels: {labels.shape}')
 
-# rename
-renameParser = subparsers.add_parser(
-    'rename', help=f"copy and rename images from /{RAW_DATA_DIRECTORY} to /{DATA_DIRECTORY}")
-renameParser.set_defaults(func=rename)
+    directory = path.Path(f'./{PICKLE_DIRECTORY}')
+    directory.mkdir(parents=True, exist_ok=True)
 
-# count
-countParser = subparsers.add_parser('count', help="count the number of images of each label (only images with _timestamp in its filename are counted)")
-countParser.set_defaults(func=count)
+    pickle.dump(images, open(f'./{PICKLE_DIRECTORY}/{imagesFilename}.pkl', 'wb'))
+    pickle.dump(labels, open(f'./{PICKLE_DIRECTORY}/{labelsFilename}.pkl', 'wb'))
 
-# preprocess
-preprocessParser = subparsers.add_parser('preprocess', help=f"preprocess all images under /{CROPPED_DIRECTORY} and copy them to /{PREPROCESSED_DIRECTORY}")
-preprocessParser.add_argument('--width', type=int, default=32)
-preprocessParser.add_argument('--height', type=int, default=32)
-preprocessParser.set_defaults(func=preprocess)
+    logger.debug("Pickled data")
 
-args = parser.parse_args(['preprocess'])
-args.func(args)
+def augment(args):
+    max = args.count
+    size = (args.width, args.height)
+
+    logger.debug(f"Augmenting data under /{CROPPED_DIRECTORY}")
+
+    directories = [p for p in path.Path(f'./{CROPPED_DIRECTORY}').glob('*') if p.is_dir()]
+    print(directories)
+    for dir in directories:
+        source = dir #['path']
+        # count = dir['count']
+
+        target = source.parent.parent.resolve() / AUG_DIRECTORY / source.name
+        # target.mkdir(parents=True, exist_ok=True)
+
+        p = Augmentor.Pipeline(source_directory=source, output_directory=target.resolve())
+        p.skew(probability=0.5)
+        p.rotate(probability=0.5, max_left_rotation=10, max_right_rotation=10)
+        p.rotate_random_90(probability=0.2)
+        p.flip_random(probability=0.5)
+        p.sample(max)
+    
+    dataset = preprocessDir(AUG_DIRECTORY, size)
+    pickleData(dataset, "images_aug", "labels_aug")
