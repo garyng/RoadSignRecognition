@@ -1,0 +1,10 @@
+version: '3.7'
+
+services: 
+  jupyter:
+    image: jupyter/scipy-notebook
+    volumes: 
+      # jovyan is the default user
+      - .:/home/jovyan/work
+    ports:
+      - '8888:8888'
