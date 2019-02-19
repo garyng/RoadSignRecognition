@@ -2,7 +2,7 @@
 
 This is a simple road sign recognition system utilizing `PCA`, `LDA`, `MLP`, `k-NN`, etc. from `scikit-learn`.
 
-## Data-preprocessing
+## Data pre-processing
 
 `main.py` contains the entrypoints of commands for counting, cropping, renaming, processing and augmenting data.
 
@@ -28,7 +28,47 @@ optional arguments:
   -h, --help            show this help message and exit
 ```
 
-Typical pipeline: `count -> rename -> crop -> preprocess or augment`
+Typical pipeline: `count -> rename -> (annotate with labelImg) -> crop -> preprocess or augment`
+
+```console
+$ python main.py count
+              Morning    Noon    Night    Total
+----------  ---------  ------  -------  -------
+No entry           22      22        8       52
+One way            44      60       84      188
+Speed bump        100     140      220      460
+Stop               80     104      116      300
+```
+
+```console
+$ python main.py rename
+Copied raw\No entry\Morning\IMG_4161-0001_timestamped.jpg to data\No entry\0001-No entry-Morning.jpg
+Copied raw\No entry\Morning\IMG_4161-0002_timestamped.jpg to data\No entry\0002-No entry-Morning.jpg
+...
+1000 files copied
+```
+
+```console
+$ python main.py crop
+0001-No entry.jpg
+0002-No entry.jpg
+0003-No entry.jpg
+...
+```
+
+```console
+$ python main.py preprocess
+2019-02-20 01:10:37.782 | DEBUG    | rsr:preprocessDir:190 - Preprocessing images under /cropped
+2019-02-20 01:10:37.784 | DEBUG    | rsr:preprocessDir:191 - Target size: (32, 32)
+2019-02-20 01:10:37.787 | DEBUG    | rsr:load:93 - Reading 0001-No entry.jpg
+2019-02-20 01:10:37.799 | DEBUG    | rsr:load:93 - Reading 0002-No entry.jpg
+...
+2019-02-20 01:12:00.905 | DEBUG    | rsr:preprocessDir:203 - Done preprocessing
+2019-02-20 01:12:00.908 | DEBUG    | rsr:pickleData:213 - Pickling data
+2019-02-20 01:12:00.918 | DEBUG    | rsr:pickleData:215 - images: (486, 1024)
+2019-02-20 01:12:00.920 | DEBUG    | rsr:pickleData:216 - labels: (486,)
+2019-02-20 01:12:00.934 | DEBUG    | rsr:pickleData:224 - Pickled data
+```
 
 ## Recognition
 
@@ -160,3 +200,7 @@ AUG_DIRECTORY = "aug" # augmented images
 PICKLE_DIRECTORY = "pkl" # store serialized dataset
 LABELS = ["No entry", "One way", "Speed bump", "Stop"]
 ```
+
+## Others
+
+This project is made for my `TPR2251 Pattern Recognition` subject.
